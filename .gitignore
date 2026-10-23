@@ -1,0 +1,24 @@
+
+# Secrets
+.env
+**/.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+
+# Local image uploads and database
+backend/uploads/
+backend/image_index.db
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
