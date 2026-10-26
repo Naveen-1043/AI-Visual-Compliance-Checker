@@ -1,10 +1,11 @@
-import React from 'react';
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   AlertCircle, ArrowUpRight, BadgeCheck, Check, CheckCircle2, CircleHelp,
   ClipboardCheck, ImagePlus, LoaderCircle, RotateCcw, ShieldCheck, Upload,
-  XCircle
+  XCircle, Search, Images, ExternalLink
 } from 'lucide-react';
+
+const API_BASE = 'http://127.0.0.1:8000';
 
 const DEFAULT_REQUIREMENTS = [
   'A Bajaj banner is visible and readable.',
@@ -26,6 +27,15 @@ function App() {
   const [report, setReport] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Bulk image search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchError, setSearchError] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchedQuery, setSearchedQuery] = useState('');
+  const [indexedCount, setIndexedCount] = useState(null);
+  const [statusLoading, setStatusLoading] = useState(false);
 
   const requirements = useMemo(
     () => requirementsText.split('\n').map((line) => line.trim()).filter(Boolean),
@@ -67,7 +77,7 @@ function App() {
     form.append('requirements', JSON.stringify(requirements));
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/analyze', {
+      const response = await fetch(`${API_BASE}/analyze`, {
         method: 'POST',
         body: form
       });
@@ -86,6 +96,49 @@ function App() {
     setPreview('');
     setReport(null);
     setError('');
+  }
+
+  async function refreshIndexStatus() {
+    setStatusLoading(true);
+    setSearchError('');
+    try {
+      const response = await fetch(`${API_BASE}/images/status`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Could not read image index status.');
+      setIndexedCount(data.indexed_images ?? 0);
+    } catch (err) {
+      setSearchError(err.message || 'Could not connect to the image search API.');
+    } finally {
+      setStatusLoading(false);
+    }
+  }
+
+  async function searchImages(event) {
+    event.preventDefault();
+    const query = searchQuery.trim();
+    setSearchError('');
+    setSearchResults([]);
+    setSearchedQuery('');
+
+    if (!query) {
+      setSearchError('Enter a description of the photos you want to find.');
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const params = new URLSearchParams({ q: query, limit: '20' });
+      const response = await fetch(`${API_BASE}/images/search?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Image search failed.');
+      setSearchResults(data.results || []);
+      setSearchedQuery(query);
+      setIndexedCount((current) => current ?? null);
+    } catch (err) {
+      setSearchError(err.message || 'Could not connect to the backend. Is FastAPI running?');
+    } finally {
+      setSearchLoading(false);
+    }
   }
 
   const overall = report?.overall_status;
@@ -107,9 +160,157 @@ function App() {
 
       <main className="main-content">
         <section className="hero">
-          <div className="eyebrow"><span className="eyebrow-line" /> IMAGE COMPLIANCE</div>
-          <h1>Check the photo.<br /><span>Know what to fix.</span></h1>
-          <p>Compare a photo against your visual standards and get a clear, requirement-by-requirement inspection report.</p>
+          <div className="eyebrow"><span className="eyebrow-line" /> VISUAL AI WORKSPACE</div>
+          <h1>Find the photo.<br /><span>Check the standard.</span></h1>
+          <p>Search across an indexed photo collection using everyday language, or inspect an individual photo against your visual standards.</p>
+        </section>
+
+        {/* Bulk image search */}
+        <section className="bulk-search-panel">
+          <div className="bulk-search-heading">
+            <div className="bulk-search-icon"><Images size={22} /></div>
+            <div>
+              <div className="eyebrow"><span className="eyebrow-line" /> BULK IMAGE SEARCH</div>
+              <h2>Search your photo collection</h2>
+              <p>Describe the scene, people, clothing, or objects you want to find.</p>
+            </div>
+          </div>
+
+          <form
+            className="bulk-search-form"
+            onSubmit={searchImages}
+            style={{
+              display: 'block',
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            <label
+              htmlFor="bulk-search-query"
+              style={{
+                display: 'block',
+                marginBottom: '8px',
+                color: '#344054',
+                fontSize: '14px',
+                fontWeight: 600,
+              }}
+            >
+              Search query
+            </label>
+            <input
+              id="bulk-search-query"
+              type="text"
+              name="searchQuery"
+              autoComplete="off"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Type here: two staff wearing blue shirts and a Bajaj vehicle"
+              style={{
+                display: 'block',
+                width: '100%',
+                height: '58px',
+                boxSizing: 'border-box',
+                margin: '0 0 12px 0',
+                padding: '0 16px',
+                color: '#202938',
+                background: '#ffffff',
+                border: '2px solid #315bea',
+                borderRadius: '12px',
+                fontSize: '16px',
+                lineHeight: 'normal',
+                opacity: 1,
+                visibility: 'visible',
+                position: 'relative',
+                zIndex: 5,
+                pointerEvents: 'auto',
+              }}
+            />
+            <button
+              className="primary-button bulk-search-button"
+              type="submit"
+              disabled={searchLoading}
+              style={{
+                display: 'flex',
+                width: '100%',
+                minHeight: '54px',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              {searchLoading
+                ? <><LoaderCircle className="spin" size={18} /> Searching...</>
+                : <><Search size={18} /> Search photos</>}
+            </button>
+          </form>
+
+          <div className="bulk-search-meta">
+            <span><span className="live-dot" /> Search uses your locally indexed photo collection</span>
+            <button type="button" className="text-button" onClick={refreshIndexStatus} disabled={statusLoading}>
+              {statusLoading ? <LoaderCircle className="spin" size={14} /> : <RotateCcw size={14} />}
+              {statusLoading ? 'Checking...' : 'Check indexed photos'}
+            </button>
+            {indexedCount !== null && <span className="index-count">{indexedCount} indexed photos</span>}
+          </div>
+
+          {searchError && <div className="error-banner"><AlertCircle size={18} /><span>{searchError}</span></div>}
+
+          {searchedQuery && (
+            <div className="search-results-section">
+              <div className="search-results-heading">
+                <div>
+                  <h3>Search results</h3>
+                  <p>For “{searchedQuery}”</p>
+                </div>
+                <span className="search-result-count">{searchResults.length} matches</span>
+              </div>
+
+              {searchResults.length === 0 ? (
+                <div className="empty-search-state">
+                  <Images size={28} />
+                  <strong>No matching photos returned</strong>
+                  <span>Try a broader description or index a folder with more photos.</span>
+                </div>
+              ) : (
+                <div className="image-results-grid">
+                  {searchResults.map((result, index) => {
+                    const imageUrl = result.image_url?.startsWith('http')
+                      ? result.image_url
+                      : `${API_BASE}${result.image_url || `/images/file/${result.image_id}`}`;
+                    return (
+                      <article className="image-result-card" key={`${result.image_id ?? result.filename}-${index}`}>
+                        <a
+                          className="image-result-preview"
+                          href={imageUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Open full image"
+                        >
+                          <img src={imageUrl} alt={result.filename || `Search result ${index + 1}`} loading="lazy" />
+                          <span className="image-open-icon"><ExternalLink size={15} /></span>
+                        </a>
+                        <div className="image-result-info">
+                          <strong title={result.filename}>{result.filename || `Image ${index + 1}`}</strong>
+                          <div className="image-result-bottom">
+                            <span>Match score</span>
+                            <b>{typeof result.score === 'number' ? result.score.toFixed(4) : '—'}</b>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="search-disclaimer">Similarity scores are ranking signals, not exact confidence percentages. Review photos manually before making compliance decisions.</p>
+            </div>
+          )}
+        </section>
+
+        {/* Existing compliance checker remains available */}
+        <section className="compliance-intro">
+          <div className="eyebrow"><span className="eyebrow-line" /> SINGLE PHOTO INSPECTION</div>
+          <h2>Check one photo against your standards</h2>
+          <p>Upload a clear image and receive a requirement-by-requirement compliance report.</p>
         </section>
 
         <form className="workspace" onSubmit={analyze}>
@@ -225,7 +426,7 @@ function App() {
 
         <footer className="footer">
           <span>VisualCheck <span className="footer-dot">·</span> Prototype</span>
-          <span>Vision AI <span className="footer-dot">+</span> structured output</span>
+          <span>Vision AI <span className="footer-dot">+</span> semantic photo search</span>
         </footer>
       </main>
     </div>
